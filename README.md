@@ -31,4 +31,9 @@ For one-click map queries without hosting files, copy the contents of `overpass-
 ## GenAI Disclosure
 The code in this project was generated almost exclusively by an LLM agent. I used JetBrains Junie
 backed by Gemini Flash for the conversion to a standalone project, though I justed Gemini in the browser
-for the initial prototypes.
+for the initial prototypes. I have reviewed the outputs and accepted them for this prototype, but have
+not performed a line by line review.
+
+## License
+MIT license - PRs welcome, but any additional generative AI or LLM usage must be disclosed and you must take responsibility
+for the quality of the code.
