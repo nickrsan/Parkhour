@@ -2,6 +2,12 @@
 
 An interactive web map built with MapLibre GL JS, `opening_hours.js`, and PMTiles support that dynamically evaluates OpenStreetMap conditional parking restrictions and off-street parking lot accessibility.
 
+Live demo at https://nickrsan.github.io/Parkhour
+
+## Cautions
+The default view runs an Overpass query on load. I'll be adjusting it to use a static extract
+for the demo and allow you to switch to Overpass to look at new areas.
+
 ## Features
 * **Direction-Agnostic Dual Offset Curbs:** Displays the left side and right side of streets independently using negative and positive `line-offset` values.
 * **Three-State Street Logic:**
@@ -30,8 +36,8 @@ For one-click map queries without hosting files, copy the contents of `overpass-
 
 ## GenAI Disclosure
 The code in this project was generated almost exclusively by an LLM agent. I used JetBrains Junie
-backed by Gemini Flash for the conversion to a standalone project, though I justed Gemini in the browser
-for the initial prototypes. I have reviewed the outputs and accepted them for this prototype, but have
+backed by Gemini Flash for the conversion to a standalone project, though I just used Gemini in the browser
+for the initial prototypes. I have reviewed the outputs and accepted them to present as my work for this demo, but have
 not performed a line by line review.
 
 ## License
