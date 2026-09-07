@@ -9,9 +9,10 @@ An interactive web map built with MapLibre GL JS, `opening_hours.js`, and PMTile
   * **Yellow (`#f1c40f`):** Allowed now, but has a scheduled restriction starting later today.
   * **Red (`#e53935`):** Restricted right now (or static permit/private/no parking).
 * **Parking Lot Polygons:**
-  * **Blue:** Public / general parking.
+  * **Blue:** Public / general parking (`access=yes` / `access=public` / `access=permissive`).
   * **Yellow:** Customers only (`access=customers`).
   * **Red:** Private, permit, residents, or currently closed.
+  * **Gray:** Unspecified / unmapped access tag.
 * **Dynamic Time Machine:** Adjust the date/time selector in the UI to preview future parking conditions (such as weekday morning street sweeping).
 * **Dual Data Providers:**
   * **Overpass API:** Bounding-box queries with local feature mutation via `opening_hours.js`.

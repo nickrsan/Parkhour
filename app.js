@@ -72,8 +72,11 @@ function evaluateParkingLot(props, now) {
   if (["private", "no", "permit", "residents", "employees"].includes(access)) {
     return { status: "restricted", rule: `Restricted access (access=${access})` };
   }
-  if (access === "yes" || access === "public" || !access) {
-    return { status: "allowed", rule: access ? `Public parking (access=${access})` : "General / public parking" };
+  if (access === "yes" || access === "public" || access === "permissive") {
+    return { status: "allowed", rule: `Public parking (access=${access})` };
+  }
+  if (!access) {
+    return { status: "unmapped", rule: "No access tag mapped (unspecified)" };
   }
   return { status: "restricted", rule: `Access restricted (${access})` };
 }

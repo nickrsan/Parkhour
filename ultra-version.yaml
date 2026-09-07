@@ -108,8 +108,10 @@ popupTemplate: |
           <span style="color: #1e88e5; font-weight: bold;">● Public / General Parking</span>
         {% elsif tags.parking_lot_status == "customers" %}
           <span style="color: #d4ac0d; font-weight: bold;">● Customers Only</span>
-        {% else %}
+        {% elsif tags.parking_lot_status == "restricted" %}
           <span style="color: #e53935; font-weight: bold;">● Private / Restricted</span>
+        {% else %}
+          <span style="color: #78909c; font-weight: bold;">● Unspecified / Unmapped Access</span>
         {% endif %}
       </div>
       <div style="font-size: 11px; color: #555; margin-bottom: 4px;">
@@ -212,8 +214,11 @@ transform: |
     if (["private", "no", "permit", "residents", "employees"].includes(access)) {
       return { status: "restricted", rule: `Restricted access (access=${access})` };
     }
-    if (access === "yes" || access === "public" || !access) {
-      return { status: "allowed", rule: access ? `Public parking (access=${access})` : "Public / unrestricted parking" };
+    if (access === "yes" || access === "public" || access === "permissive") {
+      return { status: "allowed", rule: `Public parking (access=${access})` };
+    }
+    if (!access) {
+      return { status: "unmapped", rule: "No access tag mapped (unspecified)" };
     }
     return { status: "restricted", rule: `Access restricted (${access})` };
   }
