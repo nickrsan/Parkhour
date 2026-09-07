@@ -1,0 +1,382 @@
+---
+title: Real-Time Street & Lot Parking Restrictions
+description: Evaluates curbs and parking lots using opening_hours.js and access tags
+options:
+  zoom: 16
+style:
+  layers:
+    # 1. Street Centerline (roads only)
+    - id: street-centerline
+      type: line
+      filter: ["!=", ["get", "is_parking_lot"], true]
+      layout:
+        line-cap: round
+        line-join: round
+      paint:
+        line-width: 1.5
+        line-color: '#7f8c8d'
+        line-opacity: 0.4
+        line-dasharray: [2, 2]
+
+    # 2. Left Curb (negative offset)
+    - id: parking-left-curb
+      type: line
+      filter: ["!=", ["get", "is_parking_lot"], true]
+      layout:
+        line-cap: round
+        line-join: round
+      paint:
+        line-width:
+          stops: [[13, 2], [15, 3.5], [17, 5], [19, 7]]
+        line-offset:
+          stops: [[13, -2.5], [15, -5], [17, -8.5], [19, -13]]
+        line-color:
+          - match
+          - [get, parking_left_status]
+          - allowed
+          - '#1e88e5' # Blue: Allowed right now
+          - restricted_today
+          - '#f1c40f' # Yellow: Restricted later today
+          - restricted
+          - '#e53935' # Red: Active restriction right now
+          - '#b0bec5' # Gray: Unmapped
+
+    # 3. Right Curb (positive offset)
+    - id: parking-right-curb
+      type: line
+      filter: ["!=", ["get", "is_parking_lot"], true]
+      layout:
+        line-cap: round
+        line-join: round
+      paint:
+        line-width:
+          stops: [[13, 2], [15, 3.5], [17, 5], [19, 7]]
+        line-offset:
+          stops: [[13, 2.5], [15, 5], [17, 8.5], [19, 13]]
+        line-color:
+          - match
+          - [get, parking_right_status]
+          - allowed
+          - '#1e88e5' # Blue: Allowed right now
+          - restricted_today
+          - '#f1c40f' # Yellow: Restricted later today
+          - restricted
+          - '#e53935' # Red: Active restriction right now
+          - '#b0bec5' # Gray: Unmapped
+
+    # 4. Parking Lots: Fill
+    - id: parking-lots-fill
+      type: fill
+      filter: ["==", ["get", "is_parking_lot"], true]
+      paint:
+        fill-color:
+          - match
+          - [get, parking_lot_status]
+          - allowed
+          - '#1e88e5' # Blue: Public / unrestricted
+          - customers
+          - '#f1c40f' # Yellow: Customer only
+          - restricted
+          - '#e53935' # Red: Private / permit / closed
+          - '#b0bec5'
+        fill-opacity: 0.45
+
+    # 5. Parking Lots: Perimeter Outline
+    - id: parking-lots-outline
+      type: line
+      filter: ["==", ["get", "is_parking_lot"], true]
+      paint:
+        line-color:
+          - match
+          - [get, parking_lot_status]
+          - allowed
+          - '#0d47a1'
+          - customers
+          - '#b78103'
+          - restricted
+          - '#b71c1c'
+          - '#546e7a'
+        line-width: 2
+
+popupTemplate: |
+  <div style="font-family: sans-serif; font-size: 13px; line-height: 1.45; min-width: 220px;">
+    {% if tags.is_parking_lot %}
+      <h3 style="margin: 0 0 6px 0;">{{tags.name | default: "Parking Lot"}}</h3>
+      <div style="margin-bottom: 6px;">
+        <b>Status:</b>
+        {% if tags.parking_lot_status == "allowed" %}
+          <span style="color: #1e88e5; font-weight: bold;">● Public / General Parking</span>
+        {% elsif tags.parking_lot_status == "customers" %}
+          <span style="color: #d4ac0d; font-weight: bold;">● Customers Only</span>
+        {% else %}
+          <span style="color: #e53935; font-weight: bold;">● Private / Restricted</span>
+        {% endif %}
+      </div>
+      <div style="font-size: 11px; color: #555; margin-bottom: 4px;">
+        <b>Rule:</b> <code>{{tags.parking_lot_rule}}</code>
+      </div>
+      {% if tags.fee %}
+        <div style="font-size: 11px; color: #555;"><b>Fee:</b> {{tags.fee}}</div>
+      {% endif %}
+      {% if tags.capacity %}
+        <div style="font-size: 11px; color: #555;"><b>Capacity:</b> {{tags.capacity}} spaces</div>
+      {% endif %}
+    {% else %}
+      <h3 style="margin: 0 0 6px 0;">{{tags.name | default: "Unnamed Street"}}</h3>
+      <div style="margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #eee;">
+        <div>
+          <b>Left Curb:</b>
+          {% if tags.parking_left_status == "allowed" %}
+            <span style="color: #1e88e5; font-weight: bold;">● Parking Allowed</span>
+          {% elsif tags.parking_left_status == "restricted_today" %}
+            <span style="color: #d4ac0d; font-weight: bold;">● Restricted Later Today</span>
+          {% elsif tags.parking_left_status == "restricted" %}
+            <span style="color: #e53935; font-weight: bold;">● Restricted / No Parking</span>
+          {% else %}
+            <span style="color: #78909c;">● Unmapped / No Lane</span>
+          {% endif %}
+        </div>
+        <div style="font-size: 11px; color: #555; margin-top: 2px;">
+          <code>{{tags.parking_left_rule}}</code>
+        </div>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <div>
+          <b>Right Curb:</b>
+          {% if tags.parking_right_status == "allowed" %}
+            <span style="color: #1e88e5; font-weight: bold;">● Parking Allowed</span>
+          {% elsif tags.parking_right_status == "restricted_today" %}
+            <span style="color: #d4ac0d; font-weight: bold;">● Restricted Later Today</span>
+          {% elsif tags.parking_right_status == "restricted" %}
+            <span style="color: #e53935; font-weight: bold;">● Restricted / No Parking</span>
+          {% else %}
+            <span style="color: #78909c;">● Unmapped / No Lane</span>
+          {% endif %}
+        </div>
+        <div style="font-size: 11px; color: #555; margin-top: 2px;">
+          <code>{{tags.parking_right_rule}}</code>
+        </div>
+      </div>
+    {% endif %}
+    <div style="font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 4px;">
+      Evaluated: {{tags.eval_time}}
+    </div>
+  </div>
+
+transform: |
+  import opening_hours from "https://esm.sh/opening_hours";
+
+  function parseConditional(str) {
+    if (!str || typeof str !== "string") return [];
+    const segments = [];
+    let cur = "";
+    let depth = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str[i];
+      if (char === "(") depth++;
+      else if (char === ")") depth = Math.max(0, depth - 1);
+      if (char === ";" && depth === 0) {
+        if (cur.trim()) segments.push(cur.trim());
+        cur = "";
+      } else {
+        cur += char;
+      }
+    }
+    if (cur.trim()) segments.push(cur.trim());
+    return segments.map((seg) => {
+      const atIdx = seg.indexOf("@");
+      if (atIdx === -1) return null;
+      const value = seg.slice(0, atIdx).trim().toLowerCase();
+      let cond = seg.slice(atIdx + 1).trim();
+      if (cond.startsWith("(") && cond.endsWith(")")) cond = cond.slice(1, -1).trim();
+      return { value, cond };
+    }).filter(Boolean);
+  }
+
+  function evaluateParkingLot(props, now) {
+    const access = (props.access || props["parking:access"] || "").toLowerCase().trim();
+    const ohStr = props.opening_hours;
+
+    if (ohStr) {
+      try {
+        const oh = new opening_hours(ohStr);
+        if (!oh.getState(now)) {
+          return { status: "restricted", rule: `Currently closed per opening hours (${ohStr})` };
+        }
+      } catch (e) {}
+    }
+
+    if (access === "customers") {
+      return { status: "customers", rule: "Customers only (access=customers)" };
+    }
+    if (["private", "no", "permit", "residents", "employees"].includes(access)) {
+      return { status: "restricted", rule: `Restricted access (access=${access})` };
+    }
+    if (access === "yes" || access === "public" || !access) {
+      return { status: "allowed", rule: access ? `Public parking (access=${access})` : "Public / unrestricted parking" };
+    }
+    return { status: "restricted", rule: `Access restricted (${access})` };
+  }
+
+  function evaluateSide(side, props, now) {
+    const condTag = props[`parking:${side}:restriction:conditional`] ||
+                    props[`parking:lane:${side}:restriction:conditional`] ||
+                    props[`parking:${side}:access:conditional`] ||
+                    props[`parking:lane:${side}:access:conditional`] ||
+                    props[`parking:lane:${side}:conditional`] ||
+                    props["parking:both:restriction:conditional"] ||
+                    props["parking:both:access:conditional"] ||
+                    props["parking:lane:both:conditional"];
+    const defaultRestr = props[`parking:${side}:restriction`] ||
+                         props[`parking:lane:${side}:restriction`] ||
+                         props["parking:both:restriction"] ||
+                         props["parking:lane:both:restriction"] ||
+                         props["parking:restriction"];
+    const accessTag = props[`parking:${side}:access`] ||
+                      props[`parking:lane:${side}:access`] ||
+                      props["parking:both:access"] ||
+                      props["parking:lane:both:access"] ||
+                      props["parking:access"];
+    const laneTag = props[`parking:${side}`] ||
+                    props[`parking:lane:${side}`] ||
+                    props["parking:both"] ||
+                    props["parking:lane:both"];
+    const wayParking = props["parking"];
+
+    const hasParkingData = condTag || defaultRestr || accessTag || laneTag || wayParking;
+    if (!hasParkingData) {
+      return { status: "unmapped", rule: "No parking mapped" };
+    }
+
+    const isProhibitive = (v) =>
+      typeof v === "string" &&
+      /^(no_parking|no_stopping|no_standing|loading_only|loading|delivery|no|none|private|permits?|residents?|customers?|disabled)$/i.test(v.trim());
+
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    let activeNowRule = null;
+    let upcomingRule = null;
+    let upcomingStart = null;
+    let pastEndedRule = null;
+    let pastEndTime = null;
+
+    if (condTag) {
+      const rules = parseConditional(condTag);
+      for (const r of rules) {
+        try {
+          const oh = new opening_hours(r.cond);
+          if (oh.getState(now)) {
+            activeNowRule = r;
+          } else if (isProhibitive(r.value)) {
+            const intervalsLater = oh.getOpenIntervals(now, endOfDay);
+            if (intervalsLater && intervalsLater.length > 0) {
+              const nextStart = intervalsLater[0][0];
+              if (!upcomingStart || nextStart < upcomingStart) {
+                upcomingStart = nextStart;
+                upcomingRule = r;
+              }
+            }
+            const intervalsAllToday = oh.getOpenIntervals(startOfDay, endOfDay);
+            for (const inv of intervalsAllToday) {
+              if (inv[1] <= now && (!pastEndTime || inv[1] > pastEndTime)) {
+                pastEndTime = inv[1];
+                pastEndedRule = r;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (activeNowRule) {
+      if (isProhibitive(activeNowRule.value)) {
+        return { status: "restricted", rule: `Active right now: ${activeNowRule.value} @ (${activeNowRule.cond})` };
+      }
+      return { status: "allowed", rule: `Active right now: ${activeNowRule.value} @ (${activeNowRule.cond})` };
+    }
+
+    if (upcomingRule && upcomingStart) {
+      const timeStr = upcomingStart.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      return { status: "restricted_today", rule: `Restricted later today at ${timeStr}: ${upcomingRule.value} @ (${upcomingRule.cond})` };
+    }
+
+    if (accessTag && isProhibitive(accessTag)) {
+      return { status: "restricted", rule: `Access restricted: ${accessTag}` };
+    }
+    if (wayParking && isProhibitive(wayParking)) {
+      return { status: "restricted", rule: `Street parking: ${wayParking}` };
+    }
+    if (laneTag && isProhibitive(laneTag)) {
+      return { status: "restricted", rule: `Parking lane: ${laneTag}` };
+    }
+    if (defaultRestr) {
+      return isProhibitive(defaultRestr)
+        ? { status: "restricted", rule: `Default restriction: ${defaultRestr}` }
+        : { status: "allowed", rule: `Default: ${defaultRestr}` };
+    }
+
+    if (pastEndedRule && pastEndTime) {
+      const endStr = pastEndTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      return { status: "allowed", rule: `Allowed now (restriction ended today at ${endStr})` };
+    }
+
+    return { status: "allowed", rule: condTag ? "Outside restricted hours (allowed)" : "Permitted" };
+  }
+
+  export default (data) => {
+    const now = new Date();
+    const evalTimeStr = now.toLocaleTimeString([], { weekday: "long", hour: "2-digit", minute: "2-digit" });
+
+    if (data && data.features) {
+      data.features = data.features.map((f) => {
+        if (!f.properties) f.properties = {};
+        if (!f.properties.tags) f.properties.tags = { ...f.properties };
+        const p = f.properties.tags;
+
+        const isLot = p.amenity === "parking" ||
+                      f.geometry.type === "Polygon" ||
+                      f.geometry.type === "MultiPolygon";
+
+        if (isLot && p.amenity === "parking") {
+          const lot = evaluateParkingLot(p, now);
+          f.properties.is_parking_lot = true;
+          f.properties.parking_lot_status = lot.status;
+          f.properties.parking_lot_rule = lot.rule;
+          f.properties.eval_time = evalTimeStr;
+
+          f.properties.tags.is_parking_lot = true;
+          f.properties.tags.parking_lot_status = lot.status;
+          f.properties.tags.parking_lot_rule = lot.rule;
+          f.properties.tags.eval_time = evalTimeStr;
+        } else {
+          const left = evaluateSide("left", p, now);
+          const right = evaluateSide("right", p, now);
+
+          f.properties.is_parking_lot = false;
+          f.properties.parking_left_status = left.status;
+          f.properties.parking_left_rule = left.rule;
+          f.properties.parking_right_status = right.status;
+          f.properties.parking_right_rule = right.rule;
+          f.properties.eval_time = evalTimeStr;
+
+          f.properties.tags.is_parking_lot = false;
+          f.properties.tags.parking_left_status = left.status;
+          f.properties.tags.parking_left_rule = left.rule;
+          f.properties.tags.parking_right_status = right.status;
+          f.properties.tags.parking_right_rule = right.rule;
+          f.properties.tags.eval_time = evalTimeStr;
+        }
+        return f;
+      });
+    }
+    return data;
+  };
+---
+[out:json][bbox:{{bbox}}];
+(
+  way[~"^parking"~"."];
+  way["highway"~"^(unclassified|residential|primary|secondary|tertiary|living_street)$"];
+  wr["amenity"="parking"];
+);
+out geom;

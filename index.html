@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Curbs & Lots: Real-Time Parking Restriction Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="./style.css" type="text/css"/>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Floating Control & Settings Panel -->
+  <aside id="panel">
+    <h2>Parking Restrictions</h2>
+    
+    <div class="control-group">
+      <label for="eval-datetime">Evaluation Time:</label>
+      <input type="datetime-local" id="eval-datetime" />
+      <button id="btn-now" class="secondary-btn">Reset to Now</button>
+    </div>
+
+    <hr />
+
+    <div class="control-group">
+      <label>Data Source:</label>
+      <div class="radio-row">
+        <label><input type="radio" name="data-source" value="overpass" checked /> Overpass API</label>
+        <label><input type="radio" name="data-source" value="pmtiles" /> PMTiles Vector</label>
+      </div>
+    </div>
+
+    <div id="overpass-controls" class="source-config">
+      <label for="overpass-url">Overpass Endpoint:</label>
+      <input type="url" id="overpass-url" value="https://overpass-api.de/api/interpreter" />
+      <button id="btn-fetch" class="primary-btn">Reload Area Data</button>
+    </div>
+
+    <div id="pmtiles-controls" class="source-config" style="display: none;">
+      <label for="pmtiles-url">PMTiles URL / Path:</label>
+      <input type="text" id="pmtiles-url" placeholder="sac_core.pmtiles or https://..." value="sac_core.pmtiles" />
+      <label for="pmtiles-layer">Source Layer Name:</label>
+      <input type="text" id="pmtiles-layer" value="parking" />
+      <button id="btn-load-pmtiles" class="primary-btn">Load PMTiles</button>
+    </div>
+
+    <div id="status-indicator">Ready</div>
+
+    <hr />
+
+    <!-- Visual Legend -->
+    <div class="legend">
+      <h3>Legend</h3>
+      <div class="legend-section">
+        <b>Street Curbs (Left / Right)</b>
+        <div class="legend-row"><span class="swatch" style="background: #1e88e5;"></span> Parking Allowed</div>
+        <div class="legend-row"><span class="swatch" style="background: #f1c40f;"></span> Restricted Later Today</div>
+        <div class="legend-row"><span class="swatch" style="background: #e53935;"></span> Restricted / No Parking</div>
+        <div class="legend-row"><span class="swatch" style="background: #b0bec5;"></span> No Curb Lane / Unmapped</div>
+      </div>
+      <div class="legend-section">
+        <b>Parking Lots (Off-Street)</b>
+        <div class="legend-row"><span class="swatch fill" style="background: #1e88e5;"></span> Public / Allowed</div>
+        <div class="legend-row"><span class="swatch fill" style="background: #f1c40f;"></span> Customers Only</div>
+        <div class="legend-row"><span class="swatch fill" style="background: #e53935;"></span> Private / Permit / Closed</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- External dependencies: MapLibre, PMTiles, osmtogeojson -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.0.7/dist/pmtiles.js"></script>
+  <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.5/osmtogeojson.js"></script>
+  
+  <!-- Main logic module with opening_hours.js import -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
