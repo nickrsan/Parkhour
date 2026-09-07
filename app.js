@@ -2,12 +2,90 @@ import opening_hours from "https://esm.sh/opening_hours";
 import { VectorTile } from "https://esm.sh/@mapbox/vector-tile@1.3.1";
 import Protobuf from "https://esm.sh/pbf@3.2.1";
 
-// 1. Map Initialization
+// 1. URL Parameters & Initial View Setup
+function getUrlParam(params, ...keys) {
+  for (const [k, v] of params.entries()) {
+    const lowerK = k.toLowerCase();
+    for (const key of keys) {
+      if (lowerK === key.toLowerCase()) {
+        return v;
+      }
+    }
+  }
+  return null;
+}
+
+function getInitialView() {
+  const defaultCenter = [13.38761, 52.51556]; // Behrenstraße, Berlin
+  const defaultZoom = 16;
+
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+    const hashParams = new URLSearchParams(hash);
+
+    // Query / Hash parameters: lat, lon/lng/long, zoom/z (case-insensitive)
+    const latParam = getUrlParam(searchParams, "lat", "latitude", "y") ??
+                     getUrlParam(hashParams, "lat", "latitude", "y");
+    const lonParam = getUrlParam(searchParams, "lon", "lng", "long", "longitude", "x") ??
+                     getUrlParam(hashParams, "lon", "lng", "long", "longitude", "x");
+    const zoomParam = getUrlParam(searchParams, "zoom", "z") ??
+                      getUrlParam(hashParams, "zoom", "z");
+
+    let lat = latParam !== null ? parseFloat(latParam) : null;
+    let lon = lonParam !== null ? parseFloat(lonParam) : null;
+    let zoom = zoomParam !== null ? parseFloat(zoomParam) : null;
+
+    // Check for map parameter (e.g., map=zoom/lat/lon or ?map=16/52.51556/13.38761)
+    const mapParam = getUrlParam(searchParams, "map") ?? getUrlParam(hashParams, "map");
+    if (mapParam) {
+      const parts = mapParam.split("/");
+      if (parts.length >= 3) {
+        if (zoom === null || isNaN(zoom)) zoom = parseFloat(parts[0]);
+        if (lat === null || isNaN(lat)) lat = parseFloat(parts[1]);
+        if (lon === null || isNaN(lon)) lon = parseFloat(parts[2]);
+      }
+    }
+
+    // Check for standard hash format #zoom/lat/lon or #map=zoom/lat/lon
+    if (hash && (lat === null || lon === null || isNaN(lat) || isNaN(lon))) {
+      let cleanHash = hash;
+      if (cleanHash.startsWith("map=")) cleanHash = cleanHash.slice(4);
+      const parts = cleanHash.split("/");
+      if (parts.length >= 3) {
+        const hZ = parseFloat(parts[0]);
+        const hLat = parseFloat(parts[1]);
+        const hLon = parseFloat(parts[2]);
+        if (!isNaN(hZ) && (zoom === null || isNaN(zoom))) zoom = hZ;
+        if (!isNaN(hLat) && (lat === null || isNaN(lat))) lat = hLat;
+        if (!isNaN(hLon) && (lon === null || isNaN(lon))) lon = hLon;
+      }
+    }
+
+    const finalLat = (lat !== null && !isNaN(lat) && lat >= -90 && lat <= 90) ? lat : defaultCenter[1];
+    const finalLon = (lon !== null && !isNaN(lon) && lon >= -180 && lon <= 180) ? lon : defaultCenter[0];
+    const finalZoom = (zoom !== null && !isNaN(zoom) && zoom >= 0 && zoom <= 24) ? zoom : defaultZoom;
+
+    return {
+      center: [finalLon, finalLat],
+      zoom: finalZoom
+    };
+  } catch (e) {
+    return {
+      center: defaultCenter,
+      zoom: defaultZoom
+    };
+  }
+}
+
+const initialView = getInitialView();
+
+// 2. Map Initialization
 const map = new maplibregl.Map({
   container: "map",
   style: "https://tiles.openfreemap.org/styles/positron",
-  center: [-121.4944, 38.5816], // Sacramento default
-  zoom: 16
+  center: initialView.center,
+  zoom: initialView.zoom
 });
 
 map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -25,7 +103,7 @@ let pmtilesFetchDebounceTimer = null;
 let rawFeatures = [];
 let currentEvaluatedGeoJSON = { type: "FeatureCollection", features: [] };
 
-// 2. Evaluator Functions
+// 3. Evaluator Functions
 function parseConditional(str) {
   if (!str || typeof str !== "string") return [];
   const segments = [];
@@ -241,7 +319,7 @@ function processFeatures(geojsonOrFeatures, evalTime) {
   };
 }
 
-// 3. Map Layers Setup
+// 4. Map Layers Setup
 function addParkingLayers(sourceId) {
   if (map.getLayer("street-centerline")) return;
 
@@ -375,7 +453,7 @@ function lat2tile(lat, zoom) {
   return Math.floor(((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * Math.pow(2, zoom));
 }
 
-// 4. Data Fetchers
+// 5. Data Fetchers
 async function fetchOverpassData() {
   const status = document.getElementById("status-indicator");
   const bounds = map.getBounds();
@@ -481,7 +559,7 @@ function getSelectedDateTime() {
   return picker.value ? new Date(picker.value) : new Date();
 }
 
-// 5. Popup Handler
+// 6. Popup Handler
 map.on("click", (e) => {
   const features = map.queryRenderedFeatures(e.point, {
     layers: ["parking-left-curb", "parking-right-curb", "parking-lots-fill"]
@@ -509,11 +587,24 @@ map.on("click", (e) => {
   new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
 });
 
-// 6. UI Controls & Event Listeners
+// 7. UI Controls & Event Listeners
 document.addEventListener("DOMContentLoaded", () => {
+  const searchParams = new URLSearchParams(window.location.search);
   const dtPicker = document.getElementById("eval-datetime");
-  const now = new Date();
-  dtPicker.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  const timeParam = getUrlParam(searchParams, "datetime", "time", "date");
+  if (timeParam) {
+    const parsedDate = new Date(timeParam);
+    if (!isNaN(parsedDate.getTime())) {
+      dtPicker.value = new Date(parsedDate.getTime() - parsedDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    } else {
+      const now = new Date();
+      dtPicker.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+  } else {
+    const now = new Date();
+    dtPicker.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
 
   document.getElementById("btn-now").addEventListener("click", () => {
     const current = new Date();
@@ -579,6 +670,20 @@ document.addEventListener("DOMContentLoaded", () => {
       status.textContent = `Failed to load PMTiles: ${err.message}`;
     }
   });
+
+  // Handle URL source parameters on initial page load
+  const pmtilesParam = getUrlParam(searchParams, "pmtiles", "pmtile");
+  const sourceParam = getUrlParam(searchParams, "source", "datasource", "data-source");
+  if (pmtilesParam || sourceParam === "pmtiles") {
+    if (pmtilesParam) {
+      document.getElementById("pmtiles-url").value = pmtilesParam;
+    }
+    const pmtilesRadio = document.querySelector('input[name="data-source"][value="pmtiles"]');
+    if (pmtilesRadio) {
+      pmtilesRadio.checked = true;
+      pmtilesRadio.dispatchEvent(new Event("change"));
+    }
+  }
 });
 
 map.on("moveend", () => {
@@ -599,5 +704,7 @@ function reEvaluateCurrentData() {
 }
 
 map.on("load", () => {
-  fetchOverpassData();
+  if (currentDataSource === "overpass") {
+    fetchOverpassData();
+  }
 });

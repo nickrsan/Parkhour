@@ -17,6 +17,7 @@ An interactive web map built with MapLibre GL JS, `opening_hours.js`, and PMTile
 * **Dual Data Providers:**
   * **Overpass API:** Bounding-box queries with local feature mutation via `opening_hours.js`.
   * **PMTiles:** Cloud-optimized vector tile loading from any public URL or GitHub release.
+* **URL Parameter & Location Sharing:** Deep link into specific coordinates and zoom levels using standard query parameters (`?lat=...&lon=...&zoom=...`, `?latitude=...&longitude=...&z=...`) or URL hash (`#map=zoom/lat/lon` / `#zoom/lat/lon`) evaluated immediately on page load.
 
 ## GitHub Pages Deployment
 1. Push `index.html`, `style.css`, and `app.js` to your GitHub repository.
@@ -26,3 +27,8 @@ An interactive web map built with MapLibre GL JS, `opening_hours.js`, and PMTile
 
 ## Overpass Ultra Snippet
 For one-click map queries without hosting files, copy the contents of `overpass-ultra-parking.yaml` and paste it into [Overpass Ultra](https://overpass-ultra.us).
+
+## GenAI Disclosure
+The code in this project was generated almost exclusively by an LLM agent. I used JetBrains Junie
+backed by Gemini Flash for the conversion to a standalone project, though I justed Gemini in the browser
+for the initial prototypes.
