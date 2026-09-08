@@ -3,6 +3,7 @@
   "defaultPMTiles": "https://f001.backblazeb2.com/file/osm-public/berlin-260907.pmtiles",
   "pmtilesAreas": [
     { "name": "Berlin", "url": "https://f001.backblazeb2.com/file/osm-public/berlin-260907.pmtiles" },
+    { "name": "Western United States", "url": "https://f001.backblazeb2.com/file/osm-public/us-west-260907.pmtiles"},
     { "name": "Northern California", "url": "https://f001.backblazeb2.com/file/osm-public/norcal-260906.pmtiles" }
   ],
   "defaultOverpass": "https://overpass-api.de/api/interpreter",
