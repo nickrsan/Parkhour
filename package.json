@@ -1,0 +1,21 @@
+{
+  "name": "parkhour",
+  "version": "1.0.0",
+  "description": "Real-time parking restriction visualization using Overpass and PMTiles",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.42.0",
+    "@vitest/coverage-v8": "^1.4.0",
+    "happy-dom": "^12.10.3",
+    "vitest": "^1.4.0"
+  },
+  "dependencies": {
+    "opening_hours": "^3.8.0"
+  }
+}

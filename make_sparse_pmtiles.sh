@@ -57,7 +57,7 @@ FILTERED_PBF="$TMP_DIR/filtered.osm.pbf"
 echo "==> Filtering OSM ways and relations..."
 
 osmium tags-filter "$INPUT_PBF" \
-  w/highway=primary,secondary,tertiary,unclassified,residential,living_street \
+  w/highway=primary,secondary,tertiary \
   w/amenity=parking \
   r/amenity=parking \
   w/parking \

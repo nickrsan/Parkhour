@@ -4,11 +4,14 @@ An interactive web map built with MapLibre GL JS, `opening_hours.js`, and PMTile
 
 Live demo at https://nickrsan.github.io/Parkhour
 
-## Cautions
-The default view runs an Overpass query on load. I'll be adjusting it to use a static extract
-for the demo and allow you to switch to Overpass to look at new areas.
+## Default Data Source & Overpass Protection
+The application defaults to local/hosted **PMTiles vector tiles** on initial visit to protect community Overpass API instances from excessive query traffic. You can switch to Overpass mode at any time using the control panel to query live OpenStreetMap data for any area worldwide.
 
 ## Features
+* **Default PMTiles Mode:** Loads hosted vector tiles instantly without hitting public Overpass server rate limits.
+* **Preconfigured Datasets & Endpoints:** Dropdown selectors configured via `config.json` for hosted PMTiles archives (e.g. Sacramento Core, Northern California) and Overpass servers (Main OSM, Kumi Systems, French OSM) with fallback to custom URLs.
+* **Session Persistence:** Browser `localStorage` retains chosen data source, endpoint URLs, map center coordinates, and zoom level across reloads.
+* **URL Parameter Deep-Linking:** Share direct links with preset coordinates, zoom level, or arbitrary PMTiles files (`?pmtiles=<url>&lat=...&lon=...&zoom=...`) that automatically load on visit.
 * **Direction-Agnostic Dual Offset Curbs:** Displays the left side and right side of streets independently using negative and positive `line-offset` values.
 * **Three-State Street Logic:**
   * **Blue (`#1e88e5`):** Parking allowed right now.
@@ -23,7 +26,25 @@ for the demo and allow you to switch to Overpass to look at new areas.
 * **Dual Data Providers:**
   * **Overpass API:** Bounding-box queries with local feature mutation via `opening_hours.js`.
   * **PMTiles:** Cloud-optimized vector tile loading from any public URL or GitHub release.
-* **URL Parameter & Location Sharing:** Deep link into specific coordinates and zoom levels using standard query parameters (`?lat=...&lon=...&zoom=...`, `?latitude=...&longitude=...&z=...`) or URL hash (`#map=zoom/lat/lon` / `#zoom/lat/lon`) evaluated immediately on page load.
+
+## Automated Testing
+Parkhour includes a comprehensive test suite covering all features and regression scenarios:
+
+```bash
+# Run Vitest unit & integration tests
+npm test
+
+# Run Vitest tests with v8 code coverage
+npm run test:coverage
+
+# Run Playwright end-to-end browser tests in Chromium
+npm run test:e2e
+```
+
+## Documentation
+- **[User Guide](documentation/user_guide.md):** Step-by-step instructions for map navigation, time machine usage, dataset selection, and deep linking.
+- **[Developer Guide](documentation/developer_guide.md):** Architecture breakdown, API reference (`evaluator.js`, `storage.js`, `ui-helpers.js`, `config.js`), and testing guide.
+- **[Feature Registry](FEATURES.md):** Running feature capabilities list and regression verification tracking.
 
 ## GitHub Pages Deployment
 1. Push `index.html`, `style.css`, and `app.js` to your GitHub repository.

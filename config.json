@@ -1,0 +1,14 @@
+{
+  "defaultDataSource": "pmtiles",
+  "defaultPMTiles": "https://f001.backblazeb2.com/file/osm-public/berlin-260907.pmtiles",
+  "pmtilesAreas": [
+    { "name": "Berlin", "url": "https://f001.backblazeb2.com/file/osm-public/berlin-260907.pmtiles" },
+    { "name": "Northern California", "url": "https://f001.backblazeb2.com/file/osm-public/norcal-260906.pmtiles" }
+  ],
+  "defaultOverpass": "https://overpass-api.de/api/interpreter",
+  "overpassServers": [
+    { "name": "Main OSM (overpass-api.de)", "url": "https://overpass-api.de/api/interpreter" },
+    { "name": "Kumi Systems", "url": "https://overpass.kumi.systems/api/interpreter" },
+    { "name": "French OSM Instance", "url": "https://overpass.openstreetmap.fr/api/interpreter" }
+  ]
+}

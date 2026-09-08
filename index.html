@@ -25,20 +25,28 @@
     <div class="control-group">
       <label>Data Source:</label>
       <div class="radio-row">
-        <label><input type="radio" name="data-source" value="overpass" checked /> Overpass API</label>
-        <label><input type="radio" name="data-source" value="pmtiles" /> PMTiles Vector</label>
+        <label><input type="radio" name="data-source" value="overpass" /> Overpass API</label>
+        <label><input type="radio" name="data-source" value="pmtiles" checked /> PMTiles Vector</label>
       </div>
     </div>
 
-    <div id="overpass-controls" class="source-config">
-      <label for="overpass-url">Overpass Endpoint:</label>
-      <input type="url" id="overpass-url" value="https://overpass-api.de/api/interpreter" />
+    <div id="overpass-controls" class="source-config" style="display: none;">
+      <label for="overpass-select">Overpass Server:</label>
+      <select id="overpass-select"></select>
+      <div id="overpass-custom-container" class="custom-input-group" style="display: none;">
+        <label for="overpass-url">Custom Endpoint URL:</label>
+        <input type="url" id="overpass-url" value="https://overpass-api.de/api/interpreter" />
+      </div>
       <button id="btn-fetch" class="primary-btn">Reload Area Data</button>
     </div>
 
-    <div id="pmtiles-controls" class="source-config" style="display: none;">
-      <label for="pmtiles-url">PMTiles URL / Path:</label>
-      <input type="text" id="pmtiles-url" placeholder="sac_core.pmtiles or https://..." value="sac_core.pmtiles" />
+    <div id="pmtiles-controls" class="source-config">
+      <label for="pmtiles-select">PMTiles Dataset Area:</label>
+      <select id="pmtiles-select"></select>
+      <div id="pmtiles-custom-container" class="custom-input-group" style="display: none;">
+        <label for="pmtiles-url">Custom PMTiles URL / Path:</label>
+        <input type="text" id="pmtiles-url" placeholder="sac_core.pmtiles or https://..." value="sac_core.pmtiles" />
+      </div>
       <label for="pmtiles-layer">Source Layer Name:</label>
       <input type="text" id="pmtiles-layer" value="parking" />
       <button id="btn-load-pmtiles" class="primary-btn">Load PMTiles</button>

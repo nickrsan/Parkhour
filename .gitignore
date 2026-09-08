@@ -1,2 +1,4 @@
 *.pbf
-norcal-260906.pmtiles
+regions/*
+coverage/*
+node_modules/**

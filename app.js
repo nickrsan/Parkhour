@@ -1,91 +1,39 @@
-import opening_hours from "https://esm.sh/opening_hours";
 import { VectorTile } from "https://esm.sh/@mapbox/vector-tile@1.3.1";
 import Protobuf from "https://esm.sh/pbf@3.2.1";
+import {
+  getUrlParam,
+  parseConditional,
+  evaluateParkingLot,
+  evaluateSide,
+  processFeatures,
+  lon2tile,
+  lat2tile
+} from "./evaluator.js";
+import { loadConfig, DEFAULT_CONFIG } from "./config.js";
+import {
+  saveSettings,
+  loadSettings,
+  resolveInitialState
+} from "./storage.js";
+import {
+  populateDropdown,
+  syncCustomInputVisibility,
+  syncDropdownWithCustomInput
+} from "./ui-helpers.js";
 
-// 1. URL Parameters & Initial View Setup
-function getUrlParam(params, ...keys) {
-  for (const [k, v] of params.entries()) {
-    const lowerK = k.toLowerCase();
-    for (const key of keys) {
-      if (lowerK === key.toLowerCase()) {
-        return v;
-      }
-    }
-  }
-  return null;
-}
-
-function getInitialView() {
-  const defaultCenter = [13.38761, 52.51556]; // Behrenstraße, Berlin
-  const defaultZoom = 16;
-
-  try {
-    const searchParams = new URLSearchParams(window.location.search);
-    const hash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
-    const hashParams = new URLSearchParams(hash);
-
-    // Query / Hash parameters: lat, lon/lng/long, zoom/z (case-insensitive)
-    const latParam = getUrlParam(searchParams, "lat", "latitude", "y") ??
-                     getUrlParam(hashParams, "lat", "latitude", "y");
-    const lonParam = getUrlParam(searchParams, "lon", "lng", "long", "longitude", "x") ??
-                     getUrlParam(hashParams, "lon", "lng", "long", "longitude", "x");
-    const zoomParam = getUrlParam(searchParams, "zoom", "z") ??
-                      getUrlParam(hashParams, "zoom", "z");
-
-    let lat = latParam !== null ? parseFloat(latParam) : null;
-    let lon = lonParam !== null ? parseFloat(lonParam) : null;
-    let zoom = zoomParam !== null ? parseFloat(zoomParam) : null;
-
-    // Check for map parameter (e.g., map=zoom/lat/lon or ?map=16/52.51556/13.38761)
-    const mapParam = getUrlParam(searchParams, "map") ?? getUrlParam(hashParams, "map");
-    if (mapParam) {
-      const parts = mapParam.split("/");
-      if (parts.length >= 3) {
-        if (zoom === null || isNaN(zoom)) zoom = parseFloat(parts[0]);
-        if (lat === null || isNaN(lat)) lat = parseFloat(parts[1]);
-        if (lon === null || isNaN(lon)) lon = parseFloat(parts[2]);
-      }
-    }
-
-    // Check for standard hash format #zoom/lat/lon or #map=zoom/lat/lon
-    if (hash && (lat === null || lon === null || isNaN(lat) || isNaN(lon))) {
-      let cleanHash = hash;
-      if (cleanHash.startsWith("map=")) cleanHash = cleanHash.slice(4);
-      const parts = cleanHash.split("/");
-      if (parts.length >= 3) {
-        const hZ = parseFloat(parts[0]);
-        const hLat = parseFloat(parts[1]);
-        const hLon = parseFloat(parts[2]);
-        if (!isNaN(hZ) && (zoom === null || isNaN(zoom))) zoom = hZ;
-        if (!isNaN(hLat) && (lat === null || isNaN(lat))) lat = hLat;
-        if (!isNaN(hLon) && (lon === null || isNaN(lon))) lon = hLon;
-      }
-    }
-
-    const finalLat = (lat !== null && !isNaN(lat) && lat >= -90 && lat <= 90) ? lat : defaultCenter[1];
-    const finalLon = (lon !== null && !isNaN(lon) && lon >= -180 && lon <= 180) ? lon : defaultCenter[0];
-    const finalZoom = (zoom !== null && !isNaN(zoom) && zoom >= 0 && zoom <= 24) ? zoom : defaultZoom;
-
-    return {
-      center: [finalLon, finalLat],
-      zoom: finalZoom
-    };
-  } catch (e) {
-    return {
-      center: defaultCenter,
-      zoom: defaultZoom
-    };
-  }
-}
-
-const initialView = getInitialView();
+// 1. Initial State Resolution & Map Initialization
+const initialSearchParams = new URLSearchParams(window.location.search);
+const initialHash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+const initialHashParams = new URLSearchParams(initialHash);
+const initialSavedSettings = loadSettings();
+const bootState = resolveInitialState(initialSearchParams, initialHashParams, initialSavedSettings, DEFAULT_CONFIG);
 
 // 2. Map Initialization
 const map = new maplibregl.Map({
   container: "map",
   style: "https://tiles.openfreemap.org/styles/positron",
-  center: initialView.center,
-  zoom: initialView.zoom
+  center: bootState.center,
+  zoom: bootState.zoom
 });
 
 map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -95,7 +43,8 @@ const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol("pmtiles", protocol.tile);
 
 // State tracking
-let currentDataSource = "overpass";
+let currentDataSource = bootState.dataSource;
+let appConfig = null;
 let activePMTiles = null;
 let activePMTilesLayer = "parking";
 let activePMTilesHeader = null;
@@ -103,221 +52,6 @@ let pmtilesFetchDebounceTimer = null;
 let rawFeatures = [];
 let currentEvaluatedGeoJSON = { type: "FeatureCollection", features: [] };
 
-// 3. Evaluator Functions
-function parseConditional(str) {
-  if (!str || typeof str !== "string") return [];
-  const segments = [];
-  let cur = "";
-  let depth = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str[i];
-    if (char === "(") depth++;
-    else if (char === ")") depth = Math.max(0, depth - 1);
-    if (char === ";" && depth === 0) {
-      if (cur.trim()) segments.push(cur.trim());
-      cur = "";
-    } else {
-      cur += char;
-    }
-  }
-  if (cur.trim()) segments.push(cur.trim());
-  return segments.map((seg) => {
-    const atIdx = seg.indexOf("@");
-    if (atIdx === -1) return null;
-    const value = seg.slice(0, atIdx).trim().toLowerCase();
-    let cond = seg.slice(atIdx + 1).trim();
-    if (cond.startsWith("(") && cond.endsWith(")")) cond = cond.slice(1, -1).trim();
-    return { value, cond };
-  }).filter(Boolean);
-}
-
-function evaluateParkingLot(props, now) {
-  const access = (props.access || props["parking:access"] || "").toLowerCase().trim();
-  const ohStr = props.opening_hours;
-
-  if (ohStr) {
-    try {
-      const oh = new opening_hours(ohStr);
-      if (!oh.getState(now)) {
-        return { status: "restricted", rule: `Closed now per opening hours (${ohStr})` };
-      }
-    } catch (e) {}
-  }
-
-  if (access === "customers") {
-    return { status: "customers", rule: "Customers only (access=customers)" };
-  }
-  if (["private", "no", "permit", "residents", "employees"].includes(access)) {
-    return { status: "restricted", rule: `Restricted access (access=${access})` };
-  }
-  if (access === "yes" || access === "public" || access === "permissive") {
-    return { status: "allowed", rule: `Public parking (access=${access})` };
-  }
-  if (!access) {
-    return { status: "unmapped", rule: "No access tag mapped (unspecified)" };
-  }
-  return { status: "restricted", rule: `Access restricted (${access})` };
-}
-
-function evaluateSide(side, props, now) {
-  const condTag = props[`parking:${side}:restriction:conditional`] ||
-                  props[`parking:lane:${side}:restriction:conditional`] ||
-                  props[`parking:${side}:access:conditional`] ||
-                  props[`parking:lane:${side}:access:conditional`] ||
-                  props[`parking:lane:${side}:conditional`] ||
-                  props[`parking:condition:${side}:conditional`] ||
-                  props[`parking:${side}:maxstay:conditional`] ||
-                  props[`parking:lane:${side}:maxstay:conditional`] ||
-                  props["parking:both:restriction:conditional"] ||
-                  props["parking:both:access:conditional"] ||
-                  props["parking:lane:both:conditional"] ||
-                  props["parking:condition:both:conditional"] ||
-                  props["parking:both:maxstay:conditional"] ||
-                  props["parking:lane:both:maxstay:conditional"];
-  const defaultRestr = props[`parking:${side}:restriction`] ||
-                       props[`parking:lane:${side}:restriction`] ||
-                       props[`parking:condition:${side}`] ||
-                       props["parking:both:restriction"] ||
-                       props["parking:lane:both:restriction"] ||
-                       props["parking:condition:both"] ||
-                       props["parking:restriction"];
-  const accessTag = props[`parking:${side}:access`] ||
-                    props[`parking:lane:${side}:access`] ||
-                    props["parking:both:access"] ||
-                    props["parking:lane:both:access"] ||
-                    props["parking:access"];
-  const laneTag = props[`parking:${side}`] ||
-                  props[`parking:lane:${side}`] ||
-                  props["parking:both"] ||
-                  props["parking:lane:both"];
-  const wayParking = props["parking"];
-
-  const hasParkingData = condTag || defaultRestr || accessTag || laneTag || wayParking;
-  if (!hasParkingData) {
-    return { status: "unmapped", rule: "No parking mapped" };
-  }
-
-  const isProhibitive = (v) =>
-    typeof v === "string" &&
-    /^(no_parking|no_stopping|no_standing|loading_only|loading|delivery|no|none|private|permits?|residents?|customers?|disabled)$/i.test(v.trim());
-
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-  let activeNowRule = null;
-  let upcomingRule = null;
-  let upcomingStart = null;
-  let pastEndedRule = null;
-  let pastEndTime = null;
-
-  if (condTag) {
-    const rules = parseConditional(condTag);
-    for (const r of rules) {
-      try {
-        const oh = new opening_hours(r.cond);
-        if (oh.getState(now)) {
-          activeNowRule = r;
-        } else if (isProhibitive(r.value)) {
-          const intervalsLater = oh.getOpenIntervals(now, endOfDay);
-          if (intervalsLater && intervalsLater.length > 0) {
-            const nextStart = intervalsLater[0][0];
-            if (!upcomingStart || nextStart < upcomingStart) {
-              upcomingStart = nextStart;
-              upcomingRule = r;
-            }
-          }
-          const intervalsAllToday = oh.getOpenIntervals(startOfDay, endOfDay);
-          for (const inv of intervalsAllToday) {
-            if (inv[1] <= now && (!pastEndTime || inv[1] > pastEndTime)) {
-              pastEndTime = inv[1];
-              pastEndedRule = r;
-            }
-          }
-        }
-      } catch (e) {}
-    }
-  }
-
-  if (activeNowRule) {
-    if (isProhibitive(activeNowRule.value)) {
-      return { status: "restricted", rule: `Active right now: ${activeNowRule.value} @ (${activeNowRule.cond})` };
-    }
-    return { status: "allowed", rule: `Active right now: ${activeNowRule.value} @ (${activeNowRule.cond})` };
-  }
-
-  if (upcomingRule && upcomingStart) {
-    const timeStr = upcomingStart.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    return { status: "restricted_today", rule: `Restricted later today at ${timeStr}: ${upcomingRule.value} @ (${upcomingRule.cond})` };
-  }
-
-  if (accessTag && isProhibitive(accessTag)) {
-    return { status: "restricted", rule: `Access restricted: ${accessTag}` };
-  }
-  if (wayParking && isProhibitive(wayParking)) {
-    return { status: "restricted", rule: `Street parking: ${wayParking}` };
-  }
-  if (laneTag && isProhibitive(laneTag)) {
-    return { status: "restricted", rule: `Parking lane: ${laneTag}` };
-  }
-  if (defaultRestr) {
-    return isProhibitive(defaultRestr)
-      ? { status: "restricted", rule: `Default restriction: ${defaultRestr}` }
-      : { status: "allowed", rule: `Default: ${defaultRestr}` };
-  }
-
-  if (pastEndedRule && pastEndTime) {
-    const endStr = pastEndTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    return { status: "allowed", rule: `Allowed now (restriction ended today at ${endStr})` };
-  }
-
-  return { status: "allowed", rule: condTag ? "Outside restricted hours (allowed)" : "Permitted" };
-}
-
-function processFeatures(geojsonOrFeatures, evalTime) {
-  const list = Array.isArray(geojsonOrFeatures)
-    ? geojsonOrFeatures
-    : (geojsonOrFeatures.features || []);
-  const evalTimeStr = evalTime.toLocaleTimeString([], { weekday: "long", hour: "2-digit", minute: "2-digit" });
-
-  const processed = list.map((f) => {
-    const rawProps = f.properties?.tags ? { ...f.properties.tags } : { ...(f.properties || {}) };
-    const p = rawProps;
-
-    const isLot = p.amenity === "parking" ||
-                  (f.geometry && (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon"));
-
-    const newProps = { ...p };
-
-    if (isLot && p.amenity === "parking") {
-      const lot = evaluateParkingLot(p, evalTime);
-      newProps.is_parking_lot = true;
-      newProps.parking_lot_status = lot.status;
-      newProps.parking_lot_rule = lot.rule;
-      newProps.eval_time = evalTimeStr;
-    } else {
-      const left = evaluateSide("left", p, evalTime);
-      const right = evaluateSide("right", p, evalTime);
-
-      newProps.is_parking_lot = false;
-      newProps.parking_left_status = left.status;
-      newProps.parking_left_rule = left.rule;
-      newProps.parking_right_status = right.status;
-      newProps.parking_right_rule = right.rule;
-      newProps.eval_time = evalTimeStr;
-    }
-
-    return {
-      type: "Feature",
-      geometry: f.geometry,
-      properties: newProps
-    };
-  });
-
-  return {
-    type: "FeatureCollection",
-    features: processed
-  };
-}
 
 // 4. Map Layers Setup
 function addParkingLayers(sourceId) {
@@ -443,15 +177,6 @@ function setMapData(geojsonData) {
   }
 }
 
-// Tile coordinate calculation helpers
-function lon2tile(lon, zoom) {
-  return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
-}
-
-function lat2tile(lat, zoom) {
-  const latRad = (lat * Math.PI) / 180;
-  return Math.floor(((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * Math.pow(2, zoom));
-}
 
 // 5. Data Fetchers
 async function fetchOverpassData() {
@@ -554,6 +279,44 @@ async function fetchPMTilesData() {
   }
 }
 
+async function loadPMTilesArchive(url, layerName = "parking") {
+  const status = document.getElementById("status-indicator");
+  if (!url) {
+    status.textContent = "Please enter a PMTiles URL or file path.";
+    return;
+  }
+
+  status.textContent = "Opening PMTiles archive...";
+  try {
+    activePMTiles = new pmtiles.PMTiles(url);
+    activePMTilesHeader = await activePMTiles.getHeader();
+    activePMTilesLayer = layerName;
+
+    // If map is currently outside the PMTiles bounds, fly to center
+    if (activePMTilesHeader.minLon !== undefined && activePMTilesHeader.maxLon !== undefined) {
+      const bounds = map.getBounds();
+      const intersects = !(
+        bounds.getEast() < activePMTilesHeader.minLon ||
+        bounds.getWest() > activePMTilesHeader.maxLon ||
+        bounds.getNorth() < activePMTilesHeader.minLat ||
+        bounds.getSouth() > activePMTilesHeader.maxLat
+      );
+      if (!intersects) {
+        const centerLon = activePMTilesHeader.centerLon ?? (activePMTilesHeader.minLon + activePMTilesHeader.maxLon) / 2;
+        const centerLat = activePMTilesHeader.centerLat ?? (activePMTilesHeader.minLat + activePMTilesHeader.maxLat) / 2;
+        map.flyTo({
+          center: [centerLon, centerLat],
+          zoom: Math.max(14, activePMTilesHeader.centerZoom || 15)
+        });
+      }
+    }
+
+    await fetchPMTilesData();
+  } catch (err) {
+    status.textContent = `Failed to load PMTiles: ${err.message}`;
+  }
+}
+
 function getSelectedDateTime() {
   const picker = document.getElementById("eval-datetime");
   return picker.value ? new Date(picker.value) : new Date();
@@ -588,11 +351,84 @@ map.on("click", (e) => {
 });
 
 // 7. UI Controls & Event Listeners
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const searchParams = new URLSearchParams(window.location.search);
+  const hash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+  const hashParams = new URLSearchParams(hash);
   const dtPicker = document.getElementById("eval-datetime");
 
-  const timeParam = getUrlParam(searchParams, "datetime", "time", "date");
+  const pmtilesSelect = document.getElementById("pmtiles-select");
+  const pmtilesUrlInput = document.getElementById("pmtiles-url");
+  const pmtilesCustomContainer = document.getElementById("pmtiles-custom-container");
+
+  const overpassSelect = document.getElementById("overpass-select");
+  const overpassUrlInput = document.getElementById("overpass-url");
+  const overpassCustomContainer = document.getElementById("overpass-custom-container");
+
+  appConfig = await loadConfig();
+  const savedSettings = loadSettings();
+  const state = resolveInitialState(searchParams, hashParams, savedSettings, appConfig);
+
+  currentDataSource = state.dataSource;
+
+  // Set inputs to resolved values
+  if (pmtilesUrlInput) pmtilesUrlInput.value = state.pmtilesUrl;
+  if (overpassUrlInput) overpassUrlInput.value = state.overpassUrl;
+
+  // Set radio state
+  const radioToSelect = document.querySelector(`input[name="data-source"][value="${currentDataSource}"]`);
+  if (radioToSelect) {
+    radioToSelect.checked = true;
+  }
+  const isOverpass = currentDataSource === "overpass";
+  document.getElementById("overpass-controls").style.display = isOverpass ? "block" : "none";
+  document.getElementById("pmtiles-controls").style.display = isOverpass ? "none" : "block";
+
+  // Populate PMTiles dropdown
+  if (pmtilesSelect && appConfig?.pmtilesAreas) {
+    populateDropdown(pmtilesSelect, appConfig.pmtilesAreas, state.pmtilesUrl);
+    syncCustomInputVisibility(pmtilesSelect, pmtilesUrlInput, pmtilesCustomContainer);
+
+    pmtilesSelect.addEventListener("change", async () => {
+      const isCustom = syncCustomInputVisibility(pmtilesSelect, pmtilesUrlInput, pmtilesCustomContainer);
+      saveSettings({ pmtilesUrl: pmtilesUrlInput.value.trim() });
+      if (!isCustom) {
+        const layerName = document.getElementById("pmtiles-layer")?.value.trim() || "parking";
+        await loadPMTilesArchive(pmtilesSelect.value, layerName);
+      }
+    });
+
+    if (pmtilesUrlInput) {
+      pmtilesUrlInput.addEventListener("input", () => {
+        syncDropdownWithCustomInput(pmtilesUrlInput, pmtilesSelect, appConfig.pmtilesAreas);
+        saveSettings({ pmtilesUrl: pmtilesUrlInput.value.trim() });
+      });
+    }
+  }
+
+  // Populate Overpass dropdown
+  if (overpassSelect && appConfig?.overpassServers) {
+    populateDropdown(overpassSelect, appConfig.overpassServers, state.overpassUrl);
+    syncCustomInputVisibility(overpassSelect, overpassUrlInput, overpassCustomContainer);
+
+    overpassSelect.addEventListener("change", () => {
+      syncCustomInputVisibility(overpassSelect, overpassUrlInput, overpassCustomContainer);
+      saveSettings({ overpassUrl: overpassUrlInput.value.trim() });
+      if (currentDataSource === "overpass") {
+        fetchOverpassData();
+      }
+    });
+
+    if (overpassUrlInput) {
+      overpassUrlInput.addEventListener("input", () => {
+        syncDropdownWithCustomInput(overpassUrlInput, overpassSelect, appConfig.overpassServers);
+        saveSettings({ overpassUrl: overpassUrlInput.value.trim() });
+      });
+    }
+  }
+
+  const timeParam = getUrlParam(searchParams, "datetime", "time", "date") ??
+                    getUrlParam(hashParams, "datetime", "time", "date");
   if (timeParam) {
     const parsedDate = new Date(timeParam);
     if (!isNaN(parsedDate.getTime())) {
@@ -617,14 +453,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll('input[name="data-source"]').forEach((radio) => {
     radio.addEventListener("change", (e) => {
       currentDataSource = e.target.value;
-      const isOverpass = currentDataSource === "overpass";
-      document.getElementById("overpass-controls").style.display = isOverpass ? "block" : "none";
-      document.getElementById("pmtiles-controls").style.display = isOverpass ? "none" : "block";
+      saveSettings({ dataSource: currentDataSource });
+      const overpassActive = currentDataSource === "overpass";
+      document.getElementById("overpass-controls").style.display = overpassActive ? "block" : "none";
+      document.getElementById("pmtiles-controls").style.display = overpassActive ? "none" : "block";
 
-      if (isOverpass) {
+      if (overpassActive) {
         fetchOverpassData();
       } else if (activePMTiles) {
         fetchPMTilesData();
+      } else {
+        const url = pmtilesUrlInput?.value.trim() || appConfig.defaultPMTiles;
+        const layerName = document.getElementById("pmtiles-layer")?.value.trim() || "parking";
+        loadPMTilesArchive(url, layerName);
       }
     });
   });
@@ -632,61 +473,23 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-fetch").addEventListener("click", fetchOverpassData);
 
   document.getElementById("btn-load-pmtiles").addEventListener("click", async () => {
-    const url = document.getElementById("pmtiles-url").value.trim();
+    const url = pmtilesUrlInput.value.trim();
     const layerName = document.getElementById("pmtiles-layer").value.trim() || "parking";
-    const status = document.getElementById("status-indicator");
-    if (!url) {
-      status.textContent = "Please enter a PMTiles URL or file path.";
-      return;
-    }
-
-    status.textContent = "Opening PMTiles archive...";
-    try {
-      activePMTiles = new pmtiles.PMTiles(url);
-      activePMTilesHeader = await activePMTiles.getHeader();
-      activePMTilesLayer = layerName;
-
-      // If map is currently outside the PMTiles bounds, fly to center
-      if (activePMTilesHeader.minLon !== undefined && activePMTilesHeader.maxLon !== undefined) {
-        const bounds = map.getBounds();
-        const intersects = !(
-          bounds.getEast() < activePMTilesHeader.minLon ||
-          bounds.getWest() > activePMTilesHeader.maxLon ||
-          bounds.getNorth() < activePMTilesHeader.minLat ||
-          bounds.getSouth() > activePMTilesHeader.maxLat
-        );
-        if (!intersects) {
-          const centerLon = activePMTilesHeader.centerLon ?? (activePMTilesHeader.minLon + activePMTilesHeader.maxLon) / 2;
-          const centerLat = activePMTilesHeader.centerLat ?? (activePMTilesHeader.minLat + activePMTilesHeader.maxLat) / 2;
-          map.flyTo({
-            center: [centerLon, centerLat],
-            zoom: Math.max(14, activePMTilesHeader.centerZoom || 15)
-          });
-        }
-      }
-
-      await fetchPMTilesData();
-    } catch (err) {
-      status.textContent = `Failed to load PMTiles: ${err.message}`;
-    }
+    saveSettings({ pmtilesUrl: url });
+    await loadPMTilesArchive(url, layerName);
   });
-
-  // Handle URL source parameters on initial page load
-  const pmtilesParam = getUrlParam(searchParams, "pmtiles", "pmtile");
-  const sourceParam = getUrlParam(searchParams, "source", "datasource", "data-source");
-  if (pmtilesParam || sourceParam === "pmtiles") {
-    if (pmtilesParam) {
-      document.getElementById("pmtiles-url").value = pmtilesParam;
-    }
-    const pmtilesRadio = document.querySelector('input[name="data-source"][value="pmtiles"]');
-    if (pmtilesRadio) {
-      pmtilesRadio.checked = true;
-      pmtilesRadio.dispatchEvent(new Event("change"));
-    }
-  }
 });
 
 map.on("moveend", () => {
+  const center = map.getCenter();
+  saveSettings({
+    center: [center.lng, center.lat],
+    zoom: map.getZoom(),
+    dataSource: currentDataSource,
+    pmtilesUrl: document.getElementById("pmtiles-url")?.value.trim(),
+    overpassUrl: document.getElementById("overpass-url")?.value.trim()
+  });
+
   if (currentDataSource === "pmtiles" && activePMTiles) {
     if (pmtilesFetchDebounceTimer) clearTimeout(pmtilesFetchDebounceTimer);
     pmtilesFetchDebounceTimer = setTimeout(() => {
@@ -703,8 +506,20 @@ function reEvaluateCurrentData() {
   }
 }
 
-map.on("load", () => {
-  if (currentDataSource === "overpass") {
+map.on("load", async () => {
+  if (!appConfig) {
+    appConfig = await loadConfig();
+  }
+  const searchParams = new URLSearchParams(window.location.search);
+  const hash = window.location.hash ? window.location.hash.replace(/^#/, "") : "";
+  const hashParams = new URLSearchParams(hash);
+  const savedSettings = loadSettings();
+  const state = resolveInitialState(searchParams, hashParams, savedSettings, appConfig);
+
+  if (state.dataSource === "pmtiles" || state.autoLoadPMTiles) {
+    const layerName = document.getElementById("pmtiles-layer")?.value.trim() || "parking";
+    await loadPMTilesArchive(state.pmtilesUrl, layerName);
+  } else if (state.dataSource === "overpass") {
     fetchOverpassData();
   }
 });

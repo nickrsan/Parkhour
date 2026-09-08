@@ -59,6 +59,7 @@ body, html {
   color: #444;
 }
 
+select,
 input[type="text"],
 input[type="url"],
 input[type="datetime-local"] {
@@ -67,6 +68,14 @@ input[type="datetime-local"] {
   font-size: 12px;
   border: 1px solid #ccc;
   border-radius: 4px;
+  background-color: #fff;
+}
+
+.custom-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
 }
 
 .radio-row {
